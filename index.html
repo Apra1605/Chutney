@@ -2,31 +2,45 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Robot Camera + Gemini Vision</title>
+  <title>Robot Camera + Gemini Vision + Sensor</title>
   <style>
     body { font-family: sans-serif; text-align: center; padding: 20px; }
     img { width: 360px; height: 270px; object-fit: cover; border: 2px solid #ccc; }
-    #cmd { font-size: 2em; margin-top: 20px; }
+    #cmd, #dist { font-size: 2em; margin-top: 20px; }
   </style>
 </head>
 <body>
-  <h1>Robot Camera + Gemini Vision</h1>
+  <h1>Robot Camera + Gemini Vision + Sensor</h1>
   <img id="live" src="" alt="Live camera snapshot" />
   <div id="cmd">--</div>
+  <div id="dist">Distance: -- cm</div>
   <script>
     // ---- EDIT HERE ----
-    const GEMINI_API_KEY = 'AIzaSyBELzK5j4T6kss4ZQSz4OLB7OLX-Bo_WO4'; // Replace with your Gemini API key!
-    const SNAP_URL = 'https://192.168.86.34:8080/shot.jpg';
+    const GEMINI_API_KEY = 'AIzaSyBELzK5j4T6kss4ZQSz4OLB7OLX-Bo_WO4';
+    const SNAP_URL = 'https://192.168.86.34:8080/shot.jpg';    // Phone camera IP Webcam
+    const ARDUINO_IP = '192.168.86.50';                       // Arduino fixed IP
     // -------------------
 
+    // Fetch distance from Arduino
+    async function fetchDistance() {
+      try {
+        const r = await fetch(`http://${ARDUINO_IP}/distance`);
+        const txt = await r.text();
+        document.getElementById('dist').textContent = `Distance: ${txt.trim()} cm`;
+      } catch (e) {
+        document.getElementById('dist').textContent = 'Distance: N/A';
+      }
+      setTimeout(fetchDistance, 2000);
+    }
+
+    // Run AI, show command, send command to Arduino
     async function fetchAndSend() {
       try {
-        // 1. Update image tag with no-cache
         const rnd = Date.now();
         const imgUrl = SNAP_URL + '?rnd=' + rnd;
         document.getElementById('live').src = imgUrl;
 
-        // 2. Fetch the image as blob and convert to Base64
+        // Fetch image as blob and convert to Base64
         const resp = await fetch(imgUrl);
         const blob = await resp.blob();
         const base64 = await new Promise((resolve, reject) => {
@@ -36,7 +50,7 @@
           reader.readAsDataURL(blob);
         });
 
-        // 3. Build Gemini Vision JSON body
+        // Gemini Vision API request body
         const body = JSON.stringify({
           contents: [
             {
@@ -55,7 +69,7 @@
           ]
         });
 
-        // 4. Call Gemini Vision API
+        // Call Gemini Vision API
         const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
         const aiResp = await fetch(geminiUrl, {
           method: "POST",
@@ -64,20 +78,28 @@
         });
         const aiJson = await aiResp.json();
 
-        // 5. Parse response (show error if any)
+        // Parse and display command
         let cmd = '--';
         if (aiJson && aiJson.candidates && aiJson.candidates.length) {
-          cmd = aiJson.candidates[0].content.parts[0].text.trim();
+          cmd = aiJson.candidates[0].content.parts[0].text.trim().toUpperCase();
         } else if (aiJson.error) {
           cmd = 'ERR: ' + aiJson.error.message;
         }
         document.getElementById('cmd').textContent = cmd;
+
+        // --- Send command to Arduino ---
+        if (["FORWARD","BACKWARD","LEFT","RIGHT","STOP"].includes(cmd)) {
+          fetch(`http://${ARDUINO_IP}/cmd?move=${encodeURIComponent(cmd)}`)
+            .catch(e => console.warn('Send to Arduino failed:', e));
+        }
       } catch (e) {
         document.getElementById('cmd').textContent = 'Error: ' + e.message;
       }
       setTimeout(fetchAndSend, 2000);
     }
+
     fetchAndSend();
+    fetchDistance();
   </script>
 </body>
 </html>
