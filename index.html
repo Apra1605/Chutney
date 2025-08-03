@@ -2,104 +2,56 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Robot Camera + Gemini Vision + Sensor</title>
+  <title>Arduino Robot Control (UNO R4 WiFi)</title>
   <style>
-    body { font-family: sans-serif; text-align: center; padding: 20px; }
-    img { width: 360px; height: 270px; object-fit: cover; border: 2px solid #ccc; }
-    #cmd, #dist { font-size: 2em; margin-top: 20px; }
+    body { font-family: sans-serif; text-align: center; margin-top: 40px; }
+    #status, #log { margin: 20px; color: #333; }
+    button { font-size: 1.5em; margin: 10px; }
   </style>
 </head>
 <body>
-  <h1>Robot Camera + Gemini Vision + Sensor</h1>
-  <img id="live" src="" alt="Live camera snapshot" />
-  <div id="cmd">--</div>
-  <div id="dist">Distance: -- cm</div>
+  <h1>Robot Remote Command</h1>
+  <div>
+    <label>Command:
+      <select id="cmd">
+        <option>FORWARD</option>
+        <option>BACKWARD</option>
+        <option>LEFT</option>
+        <option>RIGHT</option>
+        <option>STOP</option>
+      </select>
+    </label>
+    <button onclick="sendCommand()">Send to Arduino</button>
+  </div>
+  <div id="status">Status: --</div>
+  <div id="log"></div>
   <script>
-    // ---- EDIT HERE ----
-    const GEMINI_API_KEY = 'AIzaSyBELzK5j4T6kss4ZQSz4OLB7OLX-Bo_WO4';
-    const SNAP_URL = 'https://192.168.86.34:8080/shot.jpg';    // Phone camera IP Webcam
-    const ARDUINO_IP = '192.168.86.50';                       // Arduino fixed IP
-    // -------------------
+    // ---- Set your Arduino's IP ----
+    const ARDUINO_URL = 'http://192.168.86.42';
 
-    // Fetch distance from Arduino
-    async function fetchDistance() {
+    async function sendCommand() {
+      const cmd = document.getElementById('cmd').value;
+      const url = `${ARDUINO_URL}?cmd=${cmd}`;
+      document.getElementById('status').textContent = "Status: Sending...";
       try {
-        const r = await fetch(`http://${ARDUINO_IP}/distance`);
-        const txt = await r.text();
-        document.getElementById('dist').textContent = `Distance: ${txt.trim()} cm`;
-      } catch (e) {
-        document.getElementById('dist').textContent = 'Distance: N/A';
-      }
-      setTimeout(fetchDistance, 2000);
-    }
-
-    // Run AI, show command, send command to Arduino
-    async function fetchAndSend() {
-      try {
-        const rnd = Date.now();
-        const imgUrl = SNAP_URL + '?rnd=' + rnd;
-        document.getElementById('live').src = imgUrl;
-
-        // Fetch image as blob and convert to Base64
-        const resp = await fetch(imgUrl);
-        const blob = await resp.blob();
-        const base64 = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result.split(',')[1]);
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
-        });
-
-        // Gemini Vision API request body
-        const body = JSON.stringify({
-          contents: [
-            {
-              parts: [
-                {
-                  inline_data: {
-                    mime_type: blob.type,
-                    data: base64
-                  }
-                },
-                {
-                  text: "Respond with only one word: FORWARD, BACKWARD, LEFT, RIGHT, or STOP. Your only purpose is to move towards a human. If no human is in the picture, say STOP."
-                }
-              ]
-            }
-          ]
-        });
-
-        // Call Gemini Vision API
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-        const aiResp = await fetch(geminiUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body
-        });
-        const aiJson = await aiResp.json();
-
-        // Parse and display command
-        let cmd = '--';
-        if (aiJson && aiJson.candidates && aiJson.candidates.length) {
-          cmd = aiJson.candidates[0].content.parts[0].text.trim().toUpperCase();
-        } else if (aiJson.error) {
-          cmd = 'ERR: ' + aiJson.error.message;
+        const resp = await fetch(url, { method: 'GET' });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${await resp.text()}`);
+        const txt = await resp.text();
+        document.getElementById('status').textContent = `Status: ${txt}`;
+        log(`Sent command: ${cmd}, response: ${txt}`);
+      } catch (err) {
+        document.getElementById('status').textContent = `Status: Failed`;
+        log(`ERROR: ${err.message}`);
+        // Extra: Show CORS warning if on HTTPS site
+        if (location.protocol === 'https:' && ARDUINO_URL.startsWith('http:')) {
+          log('⚠️ NOTE: Browsers block HTTPS→HTTP (Mixed Content). Test from localhost for full access.');
         }
-        document.getElementById('cmd').textContent = cmd;
-
-        // --- Send command to Arduino ---
-        if (["FORWARD","BACKWARD","LEFT","RIGHT","STOP"].includes(cmd)) {
-          fetch(`http://${ARDUINO_IP}/cmd?move=${encodeURIComponent(cmd)}`)
-            .catch(e => console.warn('Send to Arduino failed:', e));
-        }
-      } catch (e) {
-        document.getElementById('cmd').textContent = 'Error: ' + e.message;
       }
-      setTimeout(fetchAndSend, 2000);
     }
-
-    fetchAndSend();
-    fetchDistance();
+    function log(msg) {
+      const logDiv = document.getElementById('log');
+      logDiv.innerHTML = `[${new Date().toLocaleTimeString()}] ${msg}<br>` + logDiv.innerHTML;
+    }
   </script>
 </body>
 </html>
