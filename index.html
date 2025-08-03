@@ -1,1 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Robot Vision Control</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; padding: 20px; }
+    img { width: 360px; height: 270px; object-fit: cover; border: 2px solid #ccc; }
+    #cmd { font-size: 2em; margin-top: 20px; }
+  </style>
+
+  <!-- Google Gen AI JS SDK for prototyping -->
+  <script type="module">
+    import { GoogleGenAI } from 'https://cdn.skypack.dev/@google/genai';
+
+    const ai = new GoogleGenAI({
+      apiKey: 'AIzaSyBELzK5j4T6kss4ZQSz4OLB7OLX-Bo_WO4',
+    });
+
+    const SNAP_URL = 'http://192.168.86.34:8080/shot.jpg';
+
+    // Picks up new image and triggers processing
+    const updateLoop = async () => {
+      const rnd = Date.now();
+      const url = SNAP_URL + '?rnd=' + rnd;
+      document.getElementById('live').src = url;
+
+      try {
+        const resp = await fetch(url);
+        const blob = await resp.blob();
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          const b64 = reader.result.split(',')[1];
+          const res = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: [
+              { inline_data: { mime_type: blob.type, data: b64 } },
+              { text: 'Respond with one word: FORWARD, BACKWARD, LEFT, RIGHT, or STOP' }
+            ]
+          });
+          const cmd = res.text.trim().toUpperCase();
+          document.getElementById('cmd').textContent = cmd;
+        };
+        reader.readAsDataURL(blob);
+      } catch (err) {
+        console.error('Error:', err);
+        document.getElementById('cmd').textContent = 'ERROR';
+      }
+
+      setTimeout(updateLoop, 2000);
+    };
+
+    window.addEventListener('DOMContentLoaded', updateLoop);
+  </script>
+</head>
+
+<body>
+  <h1>Robot Camera + Gemini Vision</h1>
+  <img id="live" src="" alt="Live camera snapshot" />
+  <div id="cmd">--</div>
+</body>
+</html>
 
