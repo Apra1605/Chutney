@@ -1,57 +1,110 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <title>Arduino Robot Control (UNO R4 WiFi)</title>
+  <meta charset="UTF-8">
+  <title>Robot Control</title>
   <style>
-    body { font-family: sans-serif; text-align: center; margin-top: 40px; }
-    #status, #log { margin: 20px; color: #333; }
-    button { font-size: 1.5em; margin: 10px; }
+    body { text-align:center; font-family:Arial; }
+    button { font-size:22px; margin:6px; padding:12px 24px; }
   </style>
 </head>
 <body>
-  <h1>Robot Remote Command</h1>
-  <div>
-    <label>Command:
-      <select id="cmd">
-        <option>FORWARD</option>
-        <option>BACKWARD</option>
-        <option>LEFT</option>
-        <option>RIGHT</option>
-        <option>STOP</option>
-      </select>
-    </label>
-    <button onclick="sendCommand()">Send to Arduino</button>
-  </div>
-  <div id="status">Status: --</div>
-  <div id="log"></div>
-  <script>
-    // ---- Set your Arduino's IP ----
-    const ARDUINO_URL = 'http://192.168.86.42';
 
-    async function sendCommand() {
-      const cmd = document.getElementById('cmd').value;
-      const url = `${ARDUINO_URL}?cmd=${cmd}`;
-      document.getElementById('status').textContent = "Status: Sending...";
-      try {
-        const resp = await fetch(url, { method: 'GET' });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${await resp.text()}`);
-        const txt = await resp.text();
-        document.getElementById('status').textContent = `Status: ${txt}`;
-        log(`Sent command: ${cmd}, response: ${txt}`);
-      } catch (err) {
-        document.getElementById('status').textContent = `Status: Failed`;
-        log(`ERROR: ${err.message}`);
-        // Extra: Show CORS warning if on HTTPS site
-        if (location.protocol === 'https:' && ARDUINO_URL.startsWith('http:')) {
-          log('⚠️ NOTE: Browsers block HTTPS→HTTP (Mixed Content). Test from localhost for full access.');
+<h1>Robot Control</h1>
+
+<button onclick="sendCmd('forward')">Forward</button><br>
+<button onclick="sendCmd('left')">Left</button>
+<button onclick="sendCmd('stop')" style="background:red;color:white;">STOP</button>
+<button onclick="sendCmd('right')">Right</button><br><br>
+
+<button onclick="toggleAI()" id="aiBtn">Enable AI</button>
+<p id="status">AI OFF</p>
+
+<video id="video" autoplay playsinline width="320"></video>
+
+<script type="module">
+import Groq from "https://cdn.skypack.dev/groq-sdk";
+
+const groq = new Groq({
+  apiKey: "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"
+});
+
+const ARDUINO_URL = "http://192.168.86.26/cmd";
+
+let aiEnabled = false;
+let aiInterval;
+
+const video = document.getElementById("video");
+navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+  .then(stream => video.srcObject = stream);
+
+// ---------- BUTTON COMMAND ----------
+function sendCmd(cmd) {
+  fetch(ARDUINO_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cmd })
+  });
+}
+window.sendCmd = sendCmd;
+
+// ---------- AI TOGGLE ----------
+function toggleAI() {
+  aiEnabled = !aiEnabled;
+  document.getElementById("status").innerText = aiEnabled ? "AI ON" : "AI OFF";
+  document.getElementById("aiBtn").innerText = aiEnabled ? "Disable AI" : "Enable AI";
+
+  if (aiEnabled) {
+    aiInterval = setInterval(runAI, 3000);
+  } else {
+    clearInterval(aiInterval);
+    sendCmd("stop");
+  }
+}
+window.toggleAI = toggleAI;
+
+// ---------- AI LOOP ----------
+async function runAI() {
+  const canvas = document.createElement("canvas");
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext("2d").drawImage(video, 0, 0);
+  const base64 = canvas.toDataURL("image/jpeg").split(",")[1];
+
+  const completion = await groq.chat.completions.create({
+    model: "moonshotai/kimi-k2-instruct-0905",
+    temperature: 0.2,
+    messages: [{
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text:
+`You control a robot.
+Reply with ONLY ONE WORD.
+Allowed words:
+Forward
+Left
+Right
+No punctuation.
+No explanation.`
+        },
+        {
+          type: "image_url",
+          image_url: { url: "data:image/jpeg;base64," + base64 }
         }
-      }
-    }
-    function log(msg) {
-      const logDiv = document.getElementById('log');
-      logDiv.innerHTML = `[${new Date().toLocaleTimeString()}] ${msg}<br>` + logDiv.innerHTML;
-    }
-  </script>
+      ]
+    }]
+  });
+
+  const decision = completion.choices[0].message.content.trim();
+  console.log("AI:", decision);
+
+  if (["Forward","Left","Right"].includes(decision)) {
+    sendCmd(decision.toLowerCase());
+  }
+}
+</script>
+
 </body>
 </html>
