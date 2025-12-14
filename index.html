@@ -26,7 +26,8 @@
 import Groq from "https://cdn.skypack.dev/groq-sdk";
 
 const groq = new Groq({
-  apiKey: "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"
+  apiKey: "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",
+  dangerouslyAllowBrowser: true
 });
 
 const ARDUINO_URL = "http://192.168.86.26/cmd";
@@ -38,7 +39,7 @@ const video = document.getElementById("video");
 navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
   .then(stream => video.srcObject = stream);
 
-// ---------- BUTTON COMMAND ----------
+// -------- SEND COMMAND --------
 function sendCmd(cmd) {
   fetch(ARDUINO_URL, {
     method: "POST",
@@ -46,9 +47,8 @@ function sendCmd(cmd) {
     body: JSON.stringify({ cmd })
   });
 }
-window.sendCmd = sendCmd;
 
-// ---------- AI TOGGLE ----------
+// -------- TOGGLE AI --------
 function toggleAI() {
   aiEnabled = !aiEnabled;
   document.getElementById("status").innerText = aiEnabled ? "AI ON" : "AI OFF";
@@ -61,9 +61,8 @@ function toggleAI() {
     sendCmd("stop");
   }
 }
-window.toggleAI = toggleAI;
 
-// ---------- AI LOOP ----------
+// -------- AI LOOP --------
 async function runAI() {
   const canvas = document.createElement("canvas");
   canvas.width = video.videoWidth;
@@ -104,7 +103,11 @@ No explanation.`
     sendCmd(decision.toLowerCase());
   }
 }
-</script>
 
+// 🔑 MAKE FUNCTIONS GLOBAL FOR BUTTONS
+window.sendCmd = sendCmd;
+window.toggleAI = toggleAI;
+
+</script>
 </body>
 </html>
